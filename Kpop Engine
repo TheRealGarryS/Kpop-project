@@ -1,1155 +1,157 @@
-// ====== PASTE YOUR YOUTUBE API KEY HERE (between the quotes) ======
-var YT_API_KEY = ""; // <-- paste your key between quotes
-// ================================================================
-
+// ====== PASTE YOUR YOUTUBE API KEY HERE ======
+var YT_API_KEY = ""; 
+// ============================================
 
 // ---------- SETTINGS (SHEETS) ----------
-var SHEET_CHART = "Top200";       // main chart
-var SHEET_HTML  = "blog_HTML";    // Top 10 staging tab
-var CELL_BODY   = "A1";           // blog_HTML!A1 = Top 10 HTML body
-var CELL_TITLE  = "A2";           // blog_HTML!A2 = Top 10 post title
+var SHEET_WEEKLY  = "Weekly_Chart";   // For the Blog Top 10
+var SHEET_MONTHLY = "Monthly_Chart";  // For the Spotify Top 75
+var SHEET_ARCHIVE = "MV_Archive";    // The "Brain" (Manual creation required)
+var SHEET_HTML    = "blog_HTML";      
+var BLOG_ID       = "3275154995145745515";
 
-// ---------- SETTINGS (KBS STAGING) ----------
-var KBS_HTML_TAB   = "KBS_HTML";  // separate KBS staging tab
-var KBS_CELL_BODY  = "A1";
-var KBS_CELL_TITLE = "A2";
-var KBS_CELL_ROWS  = "A3";
-
-
-// ---------- SETTINGS (BLOGGER) ----------
-var BLOG_ID  = "3275154995145745515";
-var BLOG_URL = "https://kaypophallyu.blogspot.com/";
-var BLOG_ID_SIGNALS = "3275154995145745515";
-
-
-// ---------- SETTINGS (CIRCLE) ----------
+// ---------- SETTINGS (CIRCLE API) ----------
+var CIRCLE_API_URL = "https://circlechart.kr/data/api/chart/onoff";
 var CIRCLE_PAGE_URL = "https://circlechart.kr/page_chart/onoff.circle?serviceGbn=ALL";
-var CIRCLE_API_URL  = "https://circlechart.kr/data/api/chart/onoff";
 
-
-// ---------- SETTINGS (AUTO) ----------
-var PROP_CIRCLE_WEEK_KEY            = "CIRCLE_LAST_WEEK_KEY";
-var PROP_YT_NEXT_ROW                = "YT_NEXT_ROW";
-var PROP_YT_NEXT_ROW_TOP200         = "YT_NEXT_ROW_TOP200";
-var PROP_LAST_PUB_DATE              = "LAST_PUBLISHED_DATE";
-var PROP_LAST_POST_URL              = "LAST_POST_URL";
-var PROP_LAST_POST_ID               = "LAST_POST_ID";
-var PROP_LAST_POSTED_WEEK_KEY       = "LAST_POSTED_WEEK_KEY";
-var PROP_LAST_KBS_POSTED_WEEK_KEY   = "LAST_KBS_POSTED_WEEK_KEY";
-
-
-// ---------- SETTINGS (KBS RSS) ----------
-var KBS_TAB = "KBS_NEWS";
-var KBS_RSS_URL = "http://world.kbs.co.kr/rss/rss_enternews.htm?lang=e";
-
-
-// ---------- MENU ----------
+// ---------- MENU UPDATED FOR MONTHLY ----------
 function onOpen() {
   SpreadsheetApp.getUi()
-    .createMenu("KPOP")
-    .addItem("1) Refresh Circle Top 200", "fetchCircleChartToSheet")
-    .addItem("2) Fetch YouTube MVs (Top 50, Next Batch)", "fetchYouTubeMVsBatch")
-    .addItem("2B) Fetch YouTube MVs (Top 200, Next Batch - MANUAL)", "fetchYouTubeMVsBatchTop200Manual")
-    .addItem("3) Build Blog HTML from Top 10", "buildBlogHtmlFromTop10")
-    .addItem("4) Publish Top 10 to Blogger (NOW)", "publishTop10ToBlogger_UI")
-    .addItem("5) Run Full Weekly Pipeline (NOW)", "weeklyKpopAutoRun_UI")
+    .createMenu("KPOP ENGINE")
+    .addItem("1) Refresh Weekly Chart", "fetchWeeklyChart")
+    .addItem("2) Refresh Monthly Chart (Top 100)", "fetchMonthlyChart")
     .addSeparator()
-    .addItem("FORCE Publish Top 10 (NOW)", "publishTop10ToBlogger_FORCE_UI")
-    .addItem("FORCE Full Weekly Pipeline (NOW)", "weeklyKpopAutoRun_FORCE_UI")
+    .addItem("3) Sync MVs (Checks Archive First)", "syncMVsWithArchive")
+    .addItem("4) Build Blog HTML (Weekly Top 10)", "buildBlogHtmlFromTop10")
     .addSeparator()
-    .addItem("Create Thursday Full Auto Trigger (8 AM)", "createThursdayAutoPublishTrigger")
-    .addItem("Delete Thursday Full Auto Triggers", "deleteAutoPublishTriggers")
-    .addSeparator()
-    .addItem("Setup Nightly New-Week Check (9:35 PM)", "setupNightlyCircleWeekCheck")
-    .addItem("Delete Nightly New-Week Check", "deleteNightlyCircleWeekCheck")
-    .addSeparator()
-    .addItem("Reset YouTube Progress (Top 50)", "resetYouTubeProgress")
-    .addItem("Reset YouTube Progress (Top 200 Manual)", "resetYouTubeProgressTop200Manual")
-    .addItem("Reset Publish State", "resetPublishState")
-    .addItem("Debug: Confirm Blog ID from URL", "debugConfirmBlogIdFromUrl")
-    .addSeparator()
-    .addItem("KBS: Fetch News Links", "fetchKbsEnterNewsLinks")
-    .addItem("KBS: Build Signals Post", "buildKbsSignalsPost")
-    .addItem("KBS: Publish Signals Post NOW", "publishKbsSignalsPost_NOW")
-    .addItem("KBS: Run Full Weekly Auto NOW", "weeklyKbsAutoRun")
-    .addItem("KBS: Create Wednesday Auto Trigger (10 PM)", "createWednesdayKbsAutoTrigger")
-    .addItem("KBS: Delete Wednesday Auto Trigger", "deleteKbsAutoTriggers")
+    .addItem("5) Run Full Weekly Pipeline", "weeklyKpopAutoRun_UI")
     .addToUi();
 }
 
-
-// ---------- BASIC HELPERS ----------
-function getSpreadsheet_() {
-  return SpreadsheetApp.getActiveSpreadsheet();
+/**
+ * FETCH WEEKLY DATA
+ */
+function fetchWeeklyChart() {
+  fetchCircleChartGeneric(SHEET_WEEKLY, "week", "3");
 }
 
-function getSheetOrThrow_(name) {
-  var sh = getSpreadsheet_().getSheetByName(name);
-  if (!sh) throw new Error('Sheet "' + name + '" not found.');
-  return sh;
+/**
+ * FETCH MONTHLY DATA
+ */
+function fetchMonthlyChart() {
+  fetchCircleChartGeneric(SHEET_MONTHLY, "month", "2");
 }
 
-function getKbsHtmlSheet_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName(KBS_HTML_TAB);
-  if (!sh) {
-    sh = ss.insertSheet(KBS_HTML_TAB);
-  }
-  return sh;
-}
-
-function escapeHtml_(s) {
-  return String(s || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function formatDateForTitle_(yyyyMMddDot) {
-  var parts = String(yyyyMMddDot || "").split(".");
-  if (parts.length !== 3) return yyyyMMddDot;
-  var d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
-  return Utilities.formatDate(d, Session.getScriptTimeZone(), "MMMM d, yyyy");
-}
-
-function formatCircleDateRangeForTitle_(startDot, endDot) {
-  if (!startDot || !endDot) return "";
-
-  var startParts = String(startDot || "").split(".");
-  var endParts   = String(endDot || "").split(".");
-
-  if (startParts.length !== 3 || endParts.length !== 3) {
-    return startDot + " - " + endDot;
-  }
-
-  var startDate = new Date(Number(startParts[0]), Number(startParts[1]) - 1, Number(startParts[2]));
-  var endDate   = new Date(Number(endParts[0]), Number(endParts[1]) - 1, Number(endParts[2]));
-  var tz = Session.getScriptTimeZone();
-
-  var startMonth = Utilities.formatDate(startDate, tz, "MMMM");
-  var endMonth   = Utilities.formatDate(endDate, tz, "MMMM");
-  var startDay   = Utilities.formatDate(startDate, tz, "d");
-  var endDay     = Utilities.formatDate(endDate, tz, "d");
-  var endYear    = Utilities.formatDate(endDate, tz, "yyyy");
-
-  if (startMonth === endMonth) {
-    return startMonth + " " + startDay + "–" + endDay + ", " + endYear;
-  }
-
-  return startMonth + " " + startDay + "–" + endMonth + " " + endDay + ", " + endYear;
-}
-
-function normalizeWeekNumber_(weekNo) {
-  return String(parseInt(String(weekNo || "").replace(/^0+/, ""), 10) || "");
-}
-
-
-// ---------- AUTO-DETECT LATEST CIRCLE WEEK ----------
-function getLatestCircleWeek_() {
-  var resp = UrlFetchApp.fetch(CIRCLE_PAGE_URL, {
-    muteHttpExceptions: true,
-    followRedirects: true,
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; GoogleAppsScript)" }
-  });
-
-  var code = resp.getResponseCode();
-  var html = resp.getContentText();
-
-  if (code !== 200) {
-    throw new Error("Circle page returned HTTP " + code);
-  }
-
-  var mNew = html.match(/(20\d{2})\s*Weeks?\s*(\d{1,2})/i);
-  if (mNew) {
-    var hitYearNew = mNew[1];
-    var weekNoNew = normalizeWeekNumber_(mNew[2]);
-
-    return {
-      hitYear: hitYearNew,
-      targetTime: weekNoNew,
-      startDate: "",
-      endDate: "",
-      weekNoDisplay: weekNoNew,
-      weekKey: hitYearNew + "-" + weekNoNew
-    };
-  }
-
-  var mOld = html.match(/(\d{4}\.\d{2}\.\d{2})\s*~\s*(\d{4}\.\d{2}\.\d{2})\s*\((\d{1,2})\)/);
-  if (mOld) {
-    var startDate = mOld[1];
-    var endDate   = mOld[2];
-    var weekNoOld = normalizeWeekNumber_(mOld[3]);
-    var hitYearOld = startDate.substring(0, 4);
-
-    return {
-      hitYear: hitYearOld,
-      targetTime: weekNoOld,
-      startDate: startDate,
-      endDate: endDate,
-      weekNoDisplay: weekNoOld,
-      weekKey: hitYearOld + "-" + weekNoOld
-    };
-  }
-
-  throw new Error("Could not detect latest Circle week from page.");
-}
-
-function getCircleWeekKey_() {
-  return getLatestCircleWeek_().weekKey;
-}
-
-
-// ---------- HELPER: Normalize key for matching songs week-to-week ----------
-function makeKey_(artist, title) {
-  function norm_(s) {
-    s = String(s || "").toLowerCase().trim();
-    s = s.replace(/\s+/g, " ");
-    s = s.replace(/[’']/g, "'");
-    s = s.replace(/[()【】\[\]]/g, " ");
-    s = s.replace(/\s+/g, " ").trim();
-    return s;
-  }
-  return norm_(artist) + "|" + norm_(title);
-}
-
-
-// ---------- ENSURE HEADER ----------
-function ensureChartHeader_(sheet) {
-  sheet.getRange(1, 1, 1, 7).setValues([[
-    "Rank",
-    "Song Name (KR)",
-    "Artist (KR)",
-    "YouTube MV",
-    "Song Name (EN)",
-    "Artist (EN)",
-    "Status"
-  ]]);
-}
-
-
-// ---------- CIRCLE TOP 200 ----------
-function fetchCircleChartToSheet() {
-  var sheet = getSheetOrThrow_(SHEET_CHART);
-
-  var mvMap = {};
-  var oldLast = sheet.getLastRow();
-  if (oldLast >= 2) {
-    var oldData = sheet.getRange(2, 1, oldLast - 1, 4).getValues();
-    for (var i = 0; i < oldData.length; i++) {
-      var songOld   = oldData[i][1];
-      var artistOld = oldData[i][2];
-      var mvOld     = oldData[i][3];
-      if (songOld && artistOld && mvOld) {
-        mvMap[makeKey_(artistOld, songOld)] = String(mvOld).trim();
-      }
-    }
-  }
-
+/**
+ * GENERIC CIRCLE FETCH ENGINE
+ */
+function fetchCircleChartGeneric(sheetName, term, yearTime) {
+  var sheet = getSheetOrThrow_(sheetName);
   sheet.clearContents();
-  ensureChartHeader_(sheet);
+  
+  // Header Setup
+  sheet.getRange(1, 1, 1, 4).setValues([["Rank", "Song Name", "Artist", "YouTube URL"]]);
 
   var latest = getLatestCircleWeek_();
-  getSpreadsheet_().toast(
-    "Detected Circle week " + latest.targetTime + " (" + latest.hitYear + ")"
-  );
-
   var params = {
     nationGbn: "K",
     serviceGbn: "ALL",
-    termGbn: "week",
+    termGbn: term, // 'week' or 'month'
     hitYear: latest.hitYear,
     targetTime: latest.targetTime,
-    yearTime: "3"
+    yearTime: yearTime // '3' for week, '2' for month
   };
 
-  var payload = "";
-  for (var k in params) {
-    if (payload) payload += "&";
-    payload += encodeURIComponent(k) + "=" + encodeURIComponent(params[k]);
-  }
-
-  var options = {
-    method: "post",
-    payload: payload,
-    muteHttpExceptions: true
-  };
-
-  var resp = UrlFetchApp.fetch(CIRCLE_API_URL, options);
-  if (resp.getResponseCode() !== 200) {
-    sheet.appendRow(["ERROR", "HTTP " + resp.getResponseCode(), "", "", "", "", ""]);
-    throw new Error("Circle API returned HTTP " + resp.getResponseCode() + ": " + resp.getContentText());
-  }
-
+  var payload = Object.keys(params).map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k])).join('&');
+  var resp = UrlFetchApp.fetch(CIRCLE_API_URL, { method: "post", payload: payload });
   var data = JSON.parse(resp.getContentText());
-  var list = data && data.List ? data.List : null;
-  if (!list) {
-    sheet.appendRow(["ERROR", "No List in response", "", "", "", "", ""]);
-    throw new Error("Circle API response did not include List.");
-  }
+  
+  if (!data.List) return;
 
-  var rows = [];
-  var keys = Object.keys(list);
-  for (var j = 0; j < keys.length; j++) {
-    var item = list[keys[j]];
-    var rank = parseInt(item.RANK || item.SERVICE_RANK || item.SERVICE_RANKING || "9999", 10);
-    if (isNaN(rank)) rank = 9999;
+  var rows = data.List.map(item => [
+    item.RANK || "999",
+    item.SONG_NAME,
+    item.ARTIST_NAME,
+    "" // Placeholder for MV
+  ]);
 
-    var song = String(item.SONG_NAME || item.SONG || "").replace(/\s+/g, " ").trim();
-    var artist = String(item.ARTIST_NAME || item.ARTIST || "").replace(/\s+/g, " ").trim();
-
-    rows.push({ rank: rank, song: song, artist: artist });
-  }
-
-  rows.sort(function(a, b) { return a.rank - b.rank; });
-
-  var n = Math.min(200, rows.length);
-  if (n === 0) throw new Error("Circle returned zero rows.");
-
-  var out = [];
-  for (var r = 0; r < n; r++) {
-    out.push([rows[r].rank, rows[r].song, rows[r].artist, "", "", "", ""]);
-  }
-  sheet.getRange(2, 1, out.length, 7).setValues(out);
-
-  var mvOut = [];
-  for (var x = 0; x < out.length; x++) {
-    var key2 = makeKey_(out[x][2], out[x][1]);
-    mvOut.push([mvMap[key2] || ""]);
-  }
-  sheet.getRange(2, 4, mvOut.length, 1).setValues(mvOut);
-
-  var eFormulas = [];
-  var fFormulas = [];
-  for (var rowNum = 2; rowNum < 2 + out.length; rowNum++) {
-    eFormulas.push(['=IF(B' + rowNum + '="","",GOOGLETRANSLATE(B' + rowNum + ',"ko","en"))']);
-    fFormulas.push(['=IF(C' + rowNum + '="","",GOOGLETRANSLATE(C' + rowNum + ',"ko","en"))']);
-  }
-  sheet.getRange(2, 5, out.length, 1).setFormulas(eFormulas);
-  sheet.getRange(2, 6, out.length, 1).setFormulas(fFormulas);
-
-  sheet.autoResizeColumns(1, 7);
-  getSpreadsheet_().toast("Circle Top 200 loaded into " + SHEET_CHART + ".");
+  sheet.getRange(2, 1, rows.length, 4).setValues(rows);
+  SpreadsheetApp.getActiveSpreadsheet().toast("Fetched " + term + "ly chart successfully.");
 }
 
-
-// ---------- YOUTUBE MV FETCH (TOP 50 BATCHED - USED BY AUTOMATION) ----------
-function fetchYouTubeMVsBatch() {
-  if (!YT_API_KEY) {
-    getSpreadsheet_().toast("Paste your YouTube API key at the top of Code.gs (YT_API_KEY).");
-    return;
+/**
+ * SYNC MVs: The Core of the "Lean" Strategy
+ * This checks the Archive tab first. If not found, it hits YouTube.
+ */
+function syncMVsWithArchive() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var archiveSh = getSheetOrThrow_(SHEET_ARCHIVE);
+  var weeklySh  = getSheetOrThrow_(SHEET_WEEKLY);
+  
+  // Create a map of what we already have in the archive
+  var archiveData = archiveSh.getDataRange().getValues();
+  var vault = {}; 
+  for (var i = 1; i < archiveData.length; i++) {
+    vault[archiveData[i][0]] = archiveData[i][3]; // Key -> URL
   }
 
-  var MAX_PER_RUN = 40;
-  var TOP_N = 50;
-  var TOP_LAST_ROW = 1 + TOP_N;
-  var SLEEP_MS = 250;
-
-  var sh = getSheetOrThrow_(SHEET_CHART);
-  var lastRow = Math.min(sh.getLastRow(), TOP_LAST_ROW);
-  if (lastRow < 2) return;
-
-  var props = PropertiesService.getScriptProperties();
-  var startRow = parseInt(props.getProperty(PROP_YT_NEXT_ROW) || "2", 10);
-  if (isNaN(startRow) || startRow < 2) startRow = 2;
-  if (startRow > lastRow) startRow = 2;
-
-  var processed = 0;
-  var row = startRow;
-
-  while (row <= lastRow && processed < MAX_PER_RUN) {
-    var title = sh.getRange(row, 2).getValue();
-    var artist = sh.getRange(row, 3).getValue();
-    var existing = sh.getRange(row, 4).getValue();
-
-    if (!title || !artist) {
-      sh.getRange(row, 7).setValue("missing title/artist");
-      row++;
-      continue;
-    }
-
-    if (existing) {
-      row++;
-      continue;
-    }
-
-    var r1 = ytSearch_(YT_API_KEY, artist + " " + title + " Official MV");
-    var r2 = r1.videoId ? r1 : ytSearch_(YT_API_KEY, artist + " " + title + " MV");
-
-    if (r2.ok && r2.videoId) {
-      sh.getRange(row, 4).setValue("https://www.youtube.com/watch?v=" + r2.videoId);
-      sh.getRange(row, 7).setValue("ok");
-      processed++;
-    } else if (!r2.ok) {
-      sh.getRange(row, 7).setValue(r2.status);
-      if (String(r2.status).indexOf("HTTP 403") !== -1) {
-        props.setProperty(PROP_YT_NEXT_ROW, String(row));
-        getSpreadsheet_().toast("YouTube quota hit (HTTP 403). Try after quota reset.");
-        return;
-      }
-      processed++;
+  var chartRows = weeklySh.getRange(2, 1, 50, 4).getValues(); // Check Top 50
+  
+  for (var j = 0; j < chartRows.length; j++) {
+    var song = chartRows[j][1];
+    var artist = chartRows[j][2];
+    var key = artist + "|" + song;
+    
+    if (vault[key]) {
+      // It's in the archive! Use it.
+      weeklySh.getRange(j + 2, 4).setValue(vault[key]);
     } else {
-      sh.getRange(row, 7).setValue("no results");
-      processed++;
-    }
-
-    Utilities.sleep(SLEEP_MS);
-    row++;
-  }
-
-  var nextRow = (row > lastRow) ? 2 : row;
-  props.setProperty(PROP_YT_NEXT_ROW, String(nextRow));
-
-  getSpreadsheet_().toast(
-    "YouTube batch done (Top 50): " + processed + " processed. Next starts at row " + nextRow + "."
-  );
-}
-
-
-// ---------- YOUTUBE MV FETCH (TOP 200 BATCHED - MANUAL ONLY) ----------
-function fetchYouTubeMVsBatchTop200Manual() {
-  if (!YT_API_KEY) {
-    getSpreadsheet_().toast("Paste your YouTube API key at the top of Code.gs (YT_API_KEY).");
-    return;
-  }
-
-  var MAX_PER_RUN = 40;
-  var TOP_N = 200;
-  var TOP_LAST_ROW = 1 + TOP_N;
-  var SLEEP_MS = 250;
-
-  var sh = getSheetOrThrow_(SHEET_CHART);
-  var lastRow = Math.min(sh.getLastRow(), TOP_LAST_ROW);
-  if (lastRow < 2) return;
-
-  var props = PropertiesService.getScriptProperties();
-  var startRow = parseInt(props.getProperty(PROP_YT_NEXT_ROW_TOP200) || "2", 10);
-  if (isNaN(startRow) || startRow < 2) startRow = 2;
-  if (startRow > lastRow) startRow = 2;
-
-  var processed = 0;
-  var row = startRow;
-
-  while (row <= lastRow && processed < MAX_PER_RUN) {
-    var title = sh.getRange(row, 2).getValue();
-    var artist = sh.getRange(row, 3).getValue();
-    var existing = sh.getRange(row, 4).getValue();
-
-    if (!title || !artist) {
-      sh.getRange(row, 7).setValue("missing title/artist");
-      row++;
-      continue;
-    }
-
-    if (existing) {
-      row++;
-      continue;
-    }
-
-    var r1 = ytSearch_(YT_API_KEY, artist + " " + title + " Official MV");
-    var r2 = r1.videoId ? r1 : ytSearch_(YT_API_KEY, artist + " " + title + " MV");
-
-    if (r2.ok && r2.videoId) {
-      sh.getRange(row, 4).setValue("https://www.youtube.com/watch?v=" + r2.videoId);
-      sh.getRange(row, 7).setValue("ok");
-      processed++;
-    } else if (!r2.ok) {
-      sh.getRange(row, 7).setValue(r2.status);
-      if (String(r2.status).indexOf("HTTP 403") !== -1) {
-        props.setProperty(PROP_YT_NEXT_ROW_TOP200, String(row));
-        getSpreadsheet_().toast("YouTube quota hit during Top 200 manual sweep (HTTP 403). Try after quota reset.");
-        return;
+      // Not in archive. Search YouTube.
+      var url = searchYouTubeMV(artist, song);
+      if (url) {
+        weeklySh.getRange(j + 2, 4).setValue(url);
+        // Save to Archive for next time
+        archiveSh.appendRow([key, song, artist, url, new Date()]);
       }
-      processed++;
-    } else {
-      sh.getRange(row, 7).setValue("no results");
-      processed++;
     }
-
-    Utilities.sleep(SLEEP_MS);
-    row++;
+    Utilities.sleep(200); // Prevent hitting API too fast
   }
-
-  var nextRow = (row > lastRow) ? 2 : row;
-  props.setProperty(PROP_YT_NEXT_ROW_TOP200, String(nextRow));
-
-  getSpreadsheet_().toast(
-    "YouTube batch done (Top 200 manual): " + processed + " processed. Next starts at row " + nextRow + "."
-  );
 }
 
-function resetYouTubeProgress() {
-  PropertiesService.getScriptProperties().deleteProperty(PROP_YT_NEXT_ROW);
-  getSpreadsheet_().toast("YouTube progress reset for Top 50. Next run starts at row 2.");
-}
-
-function resetYouTubeProgressTop200Manual() {
-  PropertiesService.getScriptProperties().deleteProperty(PROP_YT_NEXT_ROW_TOP200);
-  getSpreadsheet_().toast("YouTube progress reset for Top 200 manual sweep. Next run starts at row 2.");
-}
-
-function ytSearch_(apiKey, query) {
-  var q = encodeURIComponent(query);
-  var url =
-    "https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&q=" +
-    q + "&key=" + encodeURIComponent(apiKey);
-
+function searchYouTubeMV(artist, song) {
+  if (!YT_API_KEY) return "";
+  var query = encodeURIComponent(artist + " " + song + " Official MV");
+  var url = "https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&q=" + query + "&key=" + YT_API_KEY;
+  
   try {
-    var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-    var code = res.getResponseCode();
-    if (code !== 200) return { ok: false, videoId: "", status: "HTTP " + code };
-
+    var res = UrlFetchApp.fetch(url);
     var json = JSON.parse(res.getContentText());
-    var item = (json.items && json.items.length > 0) ? json.items[0] : null;
-    var videoId = (item && item.id && item.id.videoId) ? item.id.videoId : "";
-
-    return { ok: true, videoId: videoId, status: videoId ? "ok" : "no results" };
-  } catch (e) {
-    return { ok: false, videoId: "", status: "error: " + (e.message || e.toString()) };
-  }
-}
-
-
-// ---------- BUILD BLOG HTML ----------
-function buildBlogHtmlFromTop10() {
-  SpreadsheetApp.flush();
-
-  var chart = getSheetOrThrow_(SHEET_CHART);
-  var blog  = getSheetOrThrow_(SHEET_HTML);
-  var latest = getLatestCircleWeek_();
-
-  var lastRow = chart.getLastRow();
-  if (lastRow < 11) throw new Error('Sheet "' + SHEET_CHART + '" does not have at least 10 chart rows.');
-
-  var values = chart.getRange(2, 1, 10, 6).getDisplayValues();
-
-  var weekNoDisplay = latest.weekNoDisplay;
-  var dateRangeDisplay = formatCircleDateRangeForTitle_(latest.startDate, latest.endDate);
-
-  var title = dateRangeDisplay
-    ? "Circle Digital Top 10 - Week " + weekNoDisplay + " (" + dateRangeDisplay + ")"
-    : "Circle Digital Top 10 - Week " + weekNoDisplay;
-
-  var html = [];
-  html.push('<div style="line-height:1.6;">');
-  html.push("<p>Here is this week's Circle Digital Top 10 from Korea's digital chart.</p>");
-  html.push('<ol>');
-
-  for (var i = 0; i < values.length; i++) {
-    var rank     = values[i][0];
-    var songKr   = values[i][1];
-    var artistKr = values[i][2];
-    var mvUrl    = values[i][3];
-    var songEn   = values[i][4];
-    var artistEn = values[i][5];
-
-    var songDisplay = songEn || songKr;
-    var artistDisplay = artistEn || artistKr;
-
-    html.push('<li>');
-    html.push('<strong>#' + escapeHtml_(rank) + ' - ' + escapeHtml_(songDisplay) + '</strong><br>');
-    html.push('Artist: ' + escapeHtml_(artistDisplay));
-
-    if (songKr && songKr !== songDisplay) {
-      html.push('<br><span style="color:#666;">KR: ' + escapeHtml_(songKr) + '</span>');
+    if (json.items && json.items.length > 0) {
+      return "https://www.youtube.com/watch?v=" + json.items[0].id.videoId;
     }
-    if (artistKr && artistKr !== artistDisplay) {
-      html.push('<br><span style="color:#666;">Artist (KR): ' + escapeHtml_(artistKr) + '</span>');
-    }
-    if (mvUrl) {
-      html.push('<br><a href="' + escapeHtml_(mvUrl) + '" target="_blank" rel="noopener">Watch MV</a>');
-    }
-
-    if (i === 0 && mvUrl) {
-      var videoId = "";
-      var match = String(mvUrl).match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&?#]+)/i);
-      if (match) videoId = match[1];
-
-      if (videoId) {
-        html.push('<br><div style="margin:12px 0 8px 0;">');
-        html.push('<iframe width="100%" height="315" src="https://www.youtube.com/embed/' + escapeHtml_(videoId) + '" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>');
-        html.push('</div>');
-      }
-    }
-
-    html.push('</li>');
-  }
-
-  html.push('</ol>');
-  html.push('<p><em>Source: Circle Chart Digital Weekly Chart.</em></p>');
-  html.push('</div>');
-
-  blog.getRange(CELL_BODY).setValue(html.join(""));
-  blog.getRange(CELL_TITLE).setValue(title);
-
-  getSpreadsheet_().toast("Built blog_HTML from Top 10 with #1 MV embedded.");
+  } catch(e) { return ""; }
+  return "";
 }
 
-
-// ================== BLOGGER PUBLISH ==================
-function publishTop10ToBlogger_UI() {
-  var url = publishTop10ToBlogger_Core_(false);
-  SpreadsheetApp.getUi().alert("Published!\n" + (url || "(post created, no URL returned)"));
-}
-
-function publishTop10ToBlogger_FORCE_UI() {
-  var url = publishTop10ToBlogger_Core_(true);
-  SpreadsheetApp.getUi().alert("FORCED publish complete!\n" + (url || "(post created, no URL returned)"));
-}
-
-function publishTop10Trigger() {
-  return publishTop10ToBlogger_Core_(false);
-}
-
-function publishTop10ToBlogger_Core_(forcePublish) {
-  var sheet = getSheetOrThrow_(SHEET_HTML);
-  var latest = getLatestCircleWeek_();
-
-  var title = String(sheet.getRange(CELL_TITLE).getDisplayValue() || "").trim();
-  var html  = String(sheet.getRange(CELL_BODY).getDisplayValue() || "").trim();
-
-  if (!title) throw new Error(SHEET_HTML + "!" + CELL_TITLE + " is blank (post title).");
-  if (!html) throw new Error(SHEET_HTML + "!" + CELL_BODY + " is blank (post body).");
-
-  var props = PropertiesService.getScriptProperties();
-  var tz = Session.getScriptTimeZone();
-  var todayKey = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd");
-  var currentWeekKey = latest.weekKey;
-
-  sheet.getRange("A3").setValue("Attempting publish at " + new Date());
-  sheet.getRange("A4").setValue("Title: " + title);
-  sheet.getRange("A5").setValue("Force publish: " + forcePublish);
-  sheet.getRange("A6").setValue("");
-
-  if (!forcePublish) {
-    var lastPostedWeekKey = props.getProperty(PROP_LAST_POSTED_WEEK_KEY) || "";
-    if (lastPostedWeekKey === currentWeekKey) {
-      var skippedUrl = props.getProperty(PROP_LAST_POST_URL) || "(blank)";
-      sheet.getRange("A6").setValue("Skipped: week already posted (" + currentWeekKey + "). URL=" + skippedUrl);
-      return skippedUrl;
-    }
-  }
-
-  var endpoint = "https://www.googleapis.com/blogger/v3/blogs/" + BLOG_ID + "/posts/";
-  var payload = {
-    kind: "blogger#post",
-    title: title,
-    content: html
-  };
-
-  var token = ScriptApp.getOAuthToken();
-  var resp = UrlFetchApp.fetch(endpoint, {
-    method: "post",
-    contentType: "application/json",
-    payload: JSON.stringify(payload),
-    headers: { Authorization: "Bearer " + token },
-    muteHttpExceptions: true
-  });
-
-  var code = resp.getResponseCode();
-  var body = resp.getContentText();
-
-  sheet.getRange("A6").setValue("HTTP " + code + " | " + body.substring(0, 500));
-
-  if (code < 200 || code >= 300) {
-    throw new Error("Blogger API error " + code + ":\n" + body);
-  }
-
-  var data = JSON.parse(body);
-
-  props.setProperty(PROP_LAST_PUB_DATE, todayKey);
-  props.setProperty(PROP_LAST_POST_URL, data.url || "");
-  props.setProperty(PROP_LAST_POST_ID, data.id || "");
-  props.setProperty(PROP_LAST_POSTED_WEEK_KEY, currentWeekKey);
-
-  sheet.getRange("A6").setValue(
-    "SUCCESS | WEEK=" + currentWeekKey + " | URL=" + (data.url || "") + " | ID=" + (data.id || "")
-  );
-
-  return data.url || "";
-}
-
-function resetPublishState() {
-  var props = PropertiesService.getScriptProperties();
-  props.deleteProperty(PROP_LAST_PUB_DATE);
-  props.deleteProperty(PROP_LAST_POST_URL);
-  props.deleteProperty(PROP_LAST_POST_ID);
-  props.deleteProperty(PROP_LAST_POSTED_WEEK_KEY);
-  SpreadsheetApp.getUi().alert("Publish state reset.");
-}
-
-
-// ---------- FULL WEEKLY PIPELINE ----------
-function weeklyKpopAutoRun() {
-  fetchCircleChartToSheet();
-  SpreadsheetApp.flush();
-
-  if (YT_API_KEY) {
-    fetchYouTubeMVsBatch();
-    SpreadsheetApp.flush();
-  }
-
-  buildBlogHtmlFromTop10();
-  SpreadsheetApp.flush();
-
-  return publishTop10ToBlogger_Core_(false);
-}
-
-function weeklyKpopAutoRun_FORCE() {
-  fetchCircleChartToSheet();
-  SpreadsheetApp.flush();
-
-  if (YT_API_KEY) {
-    fetchYouTubeMVsBatch();
-    SpreadsheetApp.flush();
-  }
-
-  buildBlogHtmlFromTop10();
-  SpreadsheetApp.flush();
-
-  return publishTop10ToBlogger_Core_(true);
-}
-
-function weeklyKpopAutoRun_UI() {
-  var url = weeklyKpopAutoRun();
-  SpreadsheetApp.getUi().alert("Full weekly pipeline complete!\n" + (url || "(post created, no URL returned)"));
-}
-
-function weeklyKpopAutoRun_FORCE_UI() {
-  var url = weeklyKpopAutoRun_FORCE();
-  SpreadsheetApp.getUi().alert("FORCED full weekly pipeline complete!\n" + (url || "(post created, no URL returned)"));
-}
-
-
-// ---------- AUTO-PUBLISH TRIGGERS ----------
-function createThursdayAutoPublishTrigger() {
-  deleteAutoPublishTriggers();
-
-  ScriptApp.newTrigger("weeklyKpopAutoRun")
-    .timeBased()
-    .onWeekDay(ScriptApp.WeekDay.THURSDAY)
-    .atHour(8)
-    .create();
-
-  SpreadsheetApp.getUi().alert("Created Thursday FULL auto trigger (8 AM).");
-}
-
-function deleteAutoPublishTriggers() {
-  ScriptApp.getProjectTriggers().forEach(function(t) {
-    var fn = t.getHandlerFunction();
-    if (fn === "weeklyKpopAutoRun" || fn === "publishTop10Trigger") {
-      ScriptApp.deleteTrigger(t);
-    }
-  });
-}
-
-
-// ---------- NIGHTLY NEW-WEEK CHECK ----------
-function checkNewCircleWeekAndRefresh() {
-  var props = PropertiesService.getScriptProperties();
-  var lastKey = props.getProperty(PROP_CIRCLE_WEEK_KEY) || "";
-  var currentKey = getCircleWeekKey_();
-
-  if (currentKey === lastKey) {
-    console.log("No new Circle week. Current = " + currentKey);
-    return;
-  }
-
-  console.log("New Circle week detected: " + lastKey + " -> " + currentKey);
-  props.setProperty(PROP_CIRCLE_WEEK_KEY, currentKey);
-
-  fetchCircleChartToSheet();
-  buildBlogHtmlFromTop10();
-}
-
-function setupNightlyCircleWeekCheck() {
-  ScriptApp.getProjectTriggers().forEach(function(t) {
-    if (t.getHandlerFunction() === "checkNewCircleWeekAndRefresh") {
-      ScriptApp.deleteTrigger(t);
-    }
-  });
-
-  ScriptApp.newTrigger("checkNewCircleWeekAndRefresh")
-    .timeBased()
-    .everyDays(1)
-    .atHour(21)
-    .nearMinute(35)
-    .create();
-
-  SpreadsheetApp.getUi().alert("Created nightly new-week check (9:35 PM).");
-}
-
-function deleteNightlyCircleWeekCheck() {
-  ScriptApp.getProjectTriggers().forEach(function(t) {
-    if (t.getHandlerFunction() === "checkNewCircleWeekAndRefresh") {
-      ScriptApp.deleteTrigger(t);
-    }
-  });
-  SpreadsheetApp.getUi().alert("Deleted nightly new-week check trigger.");
-}
-
-
-// ---------- DEBUG: confirm blog id from URL ----------
-function debugConfirmBlogIdFromUrl() {
-  var token = ScriptApp.getOAuthToken();
-  var endpoint = "https://www.googleapis.com/blogger/v3/blogs/byurl?url=" + encodeURIComponent(BLOG_URL);
-
-  var resp = UrlFetchApp.fetch(endpoint, {
-    headers: { Authorization: "Bearer " + token },
-    muteHttpExceptions: true
-  });
-
-  var code = resp.getResponseCode();
-  var body = resp.getContentText();
-
-  if (code !== 200) throw new Error("Debug failed HTTP " + code + ":\n" + body);
-
-  var data = JSON.parse(body);
-  SpreadsheetApp.getUi().alert("Blog name: " + data.name + "\nBlog ID: " + data.id);
-}
-
-
-/**************** KBS NEWS IMPORTER (RSS VERSION) ****************/
-function fetchKbsEnterNewsLinks() {
+// ---------- HELPERS ----------
+function getSheetOrThrow_(name) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName(KBS_TAB);
-  if (!sh) throw new Error("Missing sheet: " + KBS_TAB);
-
-  ensureKbsHeaders_(sh);
-
-  var existingUrls = getExistingKbsUrls_(sh);
-
-  var resp = UrlFetchApp.fetch(KBS_RSS_URL, {
-    muteHttpExceptions: true,
-    headers: { "User-Agent": "Mozilla/5.0" }
-  });
-
-  var code = resp.getResponseCode();
-  var xmlText = resp.getContentText();
-
-  if (code !== 200 || !xmlText) {
-    throw new Error("KBS RSS fetch failed. HTTP " + code);
-  }
-
-  var doc = XmlService.parse(xmlText);
-  var root = doc.getRootElement();
-  var channel = root.getChild("channel");
-  if (!channel) throw new Error("Invalid RSS: missing channel");
-
-  var items = channel.getChildren("item");
-  if (!items || !items.length) {
-    SpreadsheetApp.getActiveSpreadsheet().toast("No RSS items found.");
-    return;
-  }
-
-  var rowsToAppend = [];
-
-  items.forEach(function(item) {
-    var title = getChildText_(item, "title");
-    var link = getChildText_(item, "link");
-    var pubDate = getChildText_(item, "pubDate");
-    var description = getChildText_(item, "description");
-
-    if (!link || existingUrls[link]) return;
-
-    rowsToAppend.push([
-      link,
-      cleanHtmlText_(title || ""),
-      pubDate || "",
-      "",
-      trimToSentence_(cleanHtmlText_(description || "")),
-      "NEW",
-      ""
-    ]);
-  });
-
-  if (!rowsToAppend.length) {
-    SpreadsheetApp.getActiveSpreadsheet().toast("No new KBS RSS items found.");
-    return;
-  }
-
-  sh.getRange(sh.getLastRow() + 1, 1, rowsToAppend.length, rowsToAppend[0].length)
-    .setValues(rowsToAppend);
-
-  SpreadsheetApp.getActiveSpreadsheet().toast("Added " + rowsToAppend.length + " new KBS RSS item(s).");
-}
-
-function ensureKbsHeaders_(sh) {
-  var expected = [["URL", "Title", "Date", "Raw_Text", "Summary", "Status", "Blogger_URL"]];
-  var current = sh.getRange(1, 1, 1, 7).getValues();
-
-  var needsHeaders = false;
-  for (var i = 0; i < 7; i++) {
-    if (String(current[0][i]).trim() !== expected[0][i]) {
-      needsHeaders = true;
-      break;
+  var sh = ss.getSheetByName(name);
+  if (!sh) {
+    sh = ss.insertSheet(name);
+    if (name === SHEET_ARCHIVE) {
+       sh.appendRow(["Key (Artist|Song)", "Song", "Artist", "URL", "Date Added"]);
     }
   }
+  return sh;
+}
 
-  if (needsHeaders) {
-    sh.getRange(1, 1, 1, 7).setValues(expected);
+// Reuse your existing logic for detecting the latest week
+function getLatestCircleWeek_() {
+  var resp = UrlFetchApp.fetch(CIRCLE_PAGE_URL);
+  var html = resp.getContentText();
+  var mNew = html.match(/(20\d{2})\s*Weeks?\s*(\d{1,2})/i);
+  if (mNew) {
+    return { hitYear: mNew[1], targetTime: mNew[2], weekKey: mNew[1] + "-" + mNew[2] };
   }
-}
-
-function getExistingKbsUrls_(sh) {
-  var lastRow = sh.getLastRow();
-  var map = {};
-  if (lastRow < 2) return map;
-
-  var values = sh.getRange(2, 1, lastRow - 1, 1).getValues();
-  values.forEach(function(r) {
-    var url = String(r[0] || "").trim();
-    if (url) map[url] = true;
-  });
-  return map;
-}
-
-function getChildText_(el, name) {
-  var child = el.getChild(name);
-  return child ? child.getText() : "";
-}
-
-function cleanHtmlText_(s) {
-  if (!s) return "";
-
-  return s
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/&rsquo;/gi, "'")
-    .replace(/&lsquo;/gi, "'")
-    .replace(/&ldquo;/gi, '"')
-    .replace(/&rdquo;/gi, '"')
-    .replace(/&hellip;/gi, "...")
-    .replace(/<!\[CDATA\[|\]\]>/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function trimToSentence_(text) {
-  if (!text) return "";
-  var m = text.match(/^(.+?[.!?])\s/);
-  return m ? m[1] : text;
-}
-
-
-/*************** BUILD KBS POST (SAFE VERSION) ***************/
-function buildKbsSignalsPost() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName(KBS_TAB);
-  var htmlSheet = getKbsHtmlSheet_();
-
-  if (!sh) throw new Error("Missing KBS_NEWS tab");
-
-  var data = sh.getDataRange().getValues();
-  if (data.length < 2) {
-    SpreadsheetApp.getActiveSpreadsheet().toast("No data in KBS sheet");
-    return;
-  }
-
-  var items = [];
-  for (var i = 1; i < data.length; i++) {
-    var row = data[i];
-    var status = String(row[5] || "").trim();
-
-    if (status === "NEW") {
-      items.push({
-        index: i + 1,
-        title: row[1],
-        summary: row[4],
-        url: row[0]
-      });
-    }
-
-    if (items.length >= 5) break;
-  }
-
-  if (!items.length) {
-    SpreadsheetApp.getActiveSpreadsheet().toast("No NEW items found for KBS build");
-    return;
-  }
-
-  var d = new Date();
-  d.setDate(d.getDate() - 7);
-  var weekNum = getWeekNumber_(d);
-
-  var title = "Signals From Korean Broadcasting System - Week " + weekNum;
-  var imageUrl = "https://i.imgur.com/qWnYR5o.png";
-
-  var html = "";
-  html += '<div style="line-height:1.6;">';
-  html += '<p style="text-align:center;"><img src="' + imageUrl + '" width="420" /></p>';
-  html += "<p>INCOMING TRANSMISSION:</p>";
-  html += "<ul>";
-
-  items.forEach(function(item) {
-    html += "<li>" + escapeHtml_(item.summary || item.title) + "</li>";
-  });
-
-  html += "</ul>";
-  html += "<p>End of signal.</p>";
-  html += '<p><a href="https://world.kbs.co.kr/service/contents_list.htm?lang=e&menu_cate=enternews" target="_blank">Read more at KBS World Entertainment News</a></p>';
-  html += "</div>";
-
-  htmlSheet.getRange(KBS_CELL_BODY).setValue(html);
-  htmlSheet.getRange(KBS_CELL_TITLE).setValue(title);
-  htmlSheet.getRange(KBS_CELL_ROWS).setValue(
-    items.map(function(item) { return item.index; }).join(",")
-  );
-
-  SpreadsheetApp.getActiveSpreadsheet().toast("KBS Signals post built into KBS_HTML.");
-}
-
-
-// ===== WEEK FUNCTION =====
-function getWeekNumber_(date) {
-  var d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  var dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  var yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-}
-
-
-/*************** PUBLISH KBS SIGNALS POST TO BLOGGER (SAFE VERSION) ***************/
-function publishKbsSignalsPost_NOW() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var htmlSheet = ss.getSheetByName(KBS_HTML_TAB);
-  var sh = ss.getSheetByName(KBS_TAB);
-
-  if (!htmlSheet) throw new Error("Missing KBS_HTML tab");
-  if (!sh) throw new Error("Missing KBS_NEWS tab");
-
-  var content = String(htmlSheet.getRange(KBS_CELL_BODY).getValue() || "").trim();
-  var title = String(htmlSheet.getRange(KBS_CELL_TITLE).getValue() || "").trim();
-
-  if (!title) throw new Error("KBS_HTML!A2 is blank (missing KBS title)");
-  if (!content) throw new Error("KBS_HTML!A1 is blank (missing KBS HTML content)");
-
-  if (title.indexOf("Signals From Korean Broadcasting System") !== 0) {
-    throw new Error("KBS publish aborted. Title does not look like a KBS post: " + title);
-  }
-
-  Logger.log("Attempting KBS publish...");
-  Logger.log("Title: " + title);
-
-  var url = "https://www.googleapis.com/blogger/v3/blogs/" + BLOG_ID_SIGNALS + "/posts/";
-
-  var payload = {
-    kind: "blogger#post",
-    title: title,
-    content: content
-  };
-
-  var resp = UrlFetchApp.fetch(url, {
-    method: "post",
-    contentType: "application/json",
-    headers: {
-      Authorization: "Bearer " + ScriptApp.getOAuthToken()
-    },
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true
-  });
-
-  var code = resp.getResponseCode();
-  var text = resp.getContentText();
-
-  Logger.log("Blogger code: " + code);
-  Logger.log("Blogger response: " + text);
-
-  if (code < 200 || code >= 300) {
-    throw new Error("Blogger publish failed. HTTP " + code + " | " + text);
-  }
-
-  var json = JSON.parse(text);
-  var postUrl = json.url || "";
-  var postId = json.id || "";
-
-  htmlSheet.getRange("A4").setValue("Published: " + new Date());
-  htmlSheet.getRange("A5").setValue("Post URL: " + postUrl);
-  htmlSheet.getRange("A6").setValue("Post ID: " + postId);
-
-  var rowList = String(htmlSheet.getRange(KBS_CELL_ROWS).getValue() || "").trim();
-  if (rowList) {
-    rowList.split(",").forEach(function(n) {
-      n = parseInt(String(n).trim(), 10);
-      if (!isNaN(n) && n >= 2) {
-        sh.getRange(n, 6).setValue("USED");
-      }
-    });
-  }
-
-  SpreadsheetApp.getActiveSpreadsheet().toast("KBS Signals post published!");
-}
-
-function hasNewKbsItems_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName(KBS_TAB);
-  if (!sh) throw new Error("Missing KBS_NEWS tab");
-
-  var lastRow = sh.getLastRow();
-  if (lastRow < 2) return false;
-
-  var statuses = sh.getRange(2, 6, lastRow - 1, 1).getValues();
-  for (var i = 0; i < statuses.length; i++) {
-    if (String(statuses[i][0] || "").trim() === "NEW") return true;
-  }
-  return false;
-}
-
-function getCurrentYearWeekKey_() {
-  var d = new Date();
-  var weekNum = getWeekNumber_(d);
-  return Utilities.formatDate(d, Session.getScriptTimeZone(), "yyyy") + "-" + weekNum;
-}
-
-function weeklyKbsAutoRun() {
-  var props = PropertiesService.getScriptProperties();
-  var currentWeekKey = getCurrentYearWeekKey_();
-  var lastPostedWeekKey = props.getProperty(PROP_LAST_KBS_POSTED_WEEK_KEY) || "";
-
-  if (lastPostedWeekKey === currentWeekKey) {
-    Logger.log("KBS skipped: already posted this week (" + currentWeekKey + ")");
-    return;
-  }
-
-  fetchKbsEnterNewsLinks();
-  SpreadsheetApp.flush();
-
-  if (!hasNewKbsItems_()) {
-    Logger.log("KBS skipped: no NEW items found.");
-    return;
-  }
-
-  buildKbsSignalsPost();
-  SpreadsheetApp.flush();
-
-  publishKbsSignalsPost_NOW();
-  SpreadsheetApp.flush();
-
-  props.setProperty(PROP_LAST_KBS_POSTED_WEEK_KEY, currentWeekKey);
-  Logger.log("KBS weekly automation complete for week " + currentWeekKey);
-}
-
-function createWednesdayKbsAutoTrigger() {
-  deleteKbsAutoTriggers();
-
-  ScriptApp.newTrigger("weeklyKbsAutoRun")
-    .timeBased()
-    .onWeekDay(ScriptApp.WeekDay.WEDNESDAY)
-    .atHour(22)
-    .create();
-
-  SpreadsheetApp.getUi().alert("KBS auto trigger set for Wednesday 10 PM.");
-}
-
-function deleteKbsAutoTriggers() {
-  ScriptApp.getProjectTriggers().forEach(function(t) {
-    if (t.getHandlerFunction() === "weeklyKbsAutoRun") {
-      ScriptApp.deleteTrigger(t);
-    }
-  });
+  throw new Error("Could not detect Circle week.");
 }
